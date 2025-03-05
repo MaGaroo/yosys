@@ -79,7 +79,7 @@ struct ExtractIOFlowsWorker
 
 		for (auto cell : module->cells()) {
 			RTLIL::SigSpec inputs, outputs;
-			log_assert(cell->type == "$_XOR_" || cell->type == "$_AND_" || cell->type == "$_OR_" || cell->type == "$_NOT_");
+			log_assert(cell->type == "$_XOR_" || cell->type == "$_AND_" || cell->type == "$_OR_" || cell->type == "$_NOT_" || cell->type == "$_MUX_");
 			for (auto conn : cell->connections()) {
 				auto dest = conn.first;
 				auto src = conn.second;
@@ -88,7 +88,7 @@ struct ExtractIOFlowsWorker
 					outputs.append(src);
 					continue;
 				} else {
-					log_assert(dest == "\\A" || dest == "\\B");
+					log_assert(dest == "\\A" || dest == "\\B" || dest == "\\S");
 					inputs.append(src);
 					continue;
 				}

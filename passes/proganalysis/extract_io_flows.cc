@@ -22,6 +22,7 @@
 #include "kernel/sigtools.h"
 #include "kernel/log.h"
 #include "kernel/celltypes.h"
+#include "kernel/json.h"
 #include "libs/sha1/sha1.h"
 #include <stdlib.h>
 #include <stdio.h>
@@ -34,6 +35,7 @@ PRIVATE_NAMESPACE_BEGIN
 
 struct ExtractIOFlowsWorker
 {
+	RTLIL::Module *module;
 	dict<RTLIL::SigBit, std::set<RTLIL::SigBit>> sig_inputs;
 	dict<RTLIL::SigBit, std::set<RTLIL::SigBit>> sig_deps;
 
@@ -64,7 +66,7 @@ struct ExtractIOFlowsWorker
 		return sig_deps[sig] = deps;
 	}
 
-	ExtractIOFlowsWorker(RTLIL::Design *design, RTLIL::Module *module)
+	ExtractIOFlowsWorker(RTLIL::Design *design, RTLIL::Module *module) : module(module)
 	{
 		for (auto conn: module->connections()) {
 			auto dest = conn.first;
@@ -79,6 +81,7 @@ struct ExtractIOFlowsWorker
 
 		for (auto cell : module->cells()) {
 			RTLIL::SigSpec inputs, outputs;
+			if (cell->type == "$scopeinfo") continue;
 			log_assert(cell->type == "$_XOR_" || cell->type == "$_AND_" || cell->type == "$_OR_" || cell->type == "$_NOT_" || cell->type == "$_MUX_");
 			for (auto conn : cell->connections()) {
 				auto dest = conn.first;
@@ -102,18 +105,89 @@ struct ExtractIOFlowsWorker
 			}
 		}
 
+		PrettyJson json;
+		json.emit_to_log();
+		json.begin_object();
+		json.entry("module", module->name.str());
+		json.entry("inputs", get_json_inputs_list());
+		json.entry_json("outputs", get_json_outputs_list());
+		json.entry_json("dependencies", get_json_dependencies_dict());
+		json.end_object();
+		// log("HAHAHAHHA");
+
+		// for (auto port: module->ports) {
+		// 	auto wire = module->wire(port);
+		// 	if (!wire->port_output) continue;
+		// 	for (int offset = 0; offset < wire->width; offset++) {
+		// 		auto bit = RTLIL::SigBit(wire, offset);
+		// 		auto deps = get_dependencies(bit);
+		// 		log("Output %s[%d] has %d dependencies\n", wire->name.c_str(), offset, deps.size());
+		// 		for (auto dep: deps) {
+		// 			log("  %s\n", log_signal(dep));
+		// 		}
+		// 	}
+		// }
+	}
+
+	json11::Json get_json_inputs_list()
+	{
+		json11::Json json;
+		std::vector<json11::Json> inputs;
+		for (auto port: module->ports) {
+			auto wire = module->wire(port);
+			if (!wire->port_input) continue;
+			for (int offset = 0; offset < wire->width; offset++) {
+				auto bit = RTLIL::SigBit(wire, offset);
+				inputs.push_back(Json::object({
+					{"name", wire->name.str()},
+					{"offset", offset},
+					{"width", wire->width},
+				}));
+			}
+		}
+		return inputs;
+	}
+
+	json11::Json get_json_outputs_list()
+	{
+		json11::Json json;
+		std::vector<json11::Json> outputs;
 		for (auto port: module->ports) {
 			auto wire = module->wire(port);
 			if (!wire->port_output) continue;
 			for (int offset = 0; offset < wire->width; offset++) {
 				auto bit = RTLIL::SigBit(wire, offset);
-				auto deps = get_dependencies(bit);
-				log("Output %s[%d] has %d dependencies\n", wire->name.c_str(), offset, deps.size());
-				for (auto dep: deps) {
-					log("  %s\n", log_signal(dep));
-				}
+				outputs.push_back(Json::object({
+				  {"name", wire->name.str()},
+				  {"offset", offset},
+				  {"width", wire->width},
+				}));
 			}
 		}
+		return outputs;
+	}
+
+	json11::Json get_json_dependencies_dict()
+	{
+		std::map<std::string, json11::Json> deps;
+		for (auto port: module->ports) {
+			auto wire = module->wire(port);
+			if (!wire->port_output)
+				continue;
+			for (int offset = 0; offset < wire->width; offset++) {
+				auto sig_deps = get_dependencies(RTLIL::SigBit(wire, offset));
+				std::vector<json11::Json> dep_names;
+				for (auto dep : sig_deps) {
+					dep_names.push_back(Json::object({
+					  {"name", dep.wire->name.str()},
+					  {"offset", dep.offset},
+					  {"width", dep.wire->width},
+					}));
+				}
+				deps[wire->name.str() + "[" + std::to_string(offset) + "]"] = dep_names;
+			}
+		}
+		return deps;
 	}
 };
 

@@ -33,6 +33,8 @@
 USING_YOSYS_NAMESPACE
 PRIVATE_NAMESPACE_BEGIN
 
+std::vector<std::string> SEQ_ELEMENTS ={"FF", "DLATCH", "DLE", "SR", "mem"};
+
 struct ExtractIOFlowsWorker
 {
 	RTLIL::Module *module;
@@ -68,6 +70,16 @@ struct ExtractIOFlowsWorker
 
 	ExtractIOFlowsWorker(RTLIL::Design *design, RTLIL::Module *module) : module(module)
 	{
+		bool is_seq=false;
+
+		for (auto cell : module->cells()) { //module sequantiality check
+			if (is_sequential(cell)) {
+				is_seq=true;
+				log("Sequential cell %s found in module: %s\n", cell->type.c_str(), module->name.c_str());
+				break;
+			}
+		}
+
 		for (auto conn: module->connections()) {
 			auto dest = conn.first;
 			auto src = conn.second;
@@ -79,39 +91,43 @@ struct ExtractIOFlowsWorker
 			}
 		}
 
-		for (auto cell : module->cells()) {
-			RTLIL::SigSpec inputs, outputs;
-			if (cell->type == "$scopeinfo") continue;
-			log_assert(cell->type == "$_XOR_" || cell->type == "$_AND_" || cell->type == "$_OR_" || cell->type == "$_NOT_" || cell->type == "$_MUX_");
-			for (auto conn : cell->connections()) {
-				auto dest = conn.first;
-				auto src = conn.second;
-				log_assert(src.size() == 1);
-				if (dest == "\\Y") {
-					outputs.append(src);
-					continue;
-				} else {
-					log_assert(dest == "\\A" || dest == "\\B" || dest == "\\S");
-					inputs.append(src);
-					continue;
+		if(!is_seq){
+			for (auto cell : module->cells()) {
+				RTLIL::SigSpec inputs, outputs;
+				if (cell->type == "$scopeinfo") continue;
+				//log_assert(cell->type == "$_XOR_" || cell->type == "$_AND_" || cell->type == "$_OR_" || cell->type == "$_NOT_" || cell->type == "$_MUX_");
+				for (auto conn : cell->connections()) {
+					auto dest = conn.first;
+					auto src = conn.second;
+					log_assert(src.size() == 1);
+					if (dest == "\\Y") {
+						outputs.append(src);
+						continue;
+					} else {
+						log_assert(dest == "\\A" || dest == "\\B" || dest == "\\S");
+						inputs.append(src);
+						continue;
+					}
+				}
+				for (int i = 0; i < outputs.size(); i++) {
+					auto output = outputs[i];
+					for (int j = 0; j < inputs.size(); j++) {
+						auto input = inputs[j];
+						add_sigbit_connection(input, output);
+					}
 				}
 			}
-			for (int i = 0; i < outputs.size(); i++) {
-				auto output = outputs[i];
-				for (int j = 0; j < inputs.size(); j++) {
-					auto input = inputs[j];
-					add_sigbit_connection(input, output);
-				}
-			}
-		}
+	    }
 
 		PrettyJson json;
 		json.emit_to_log();
 		json.begin_object();
-		json.entry("module", module->name.str());
-		json.entry("inputs", get_json_inputs_list());
-		json.entry_json("outputs", get_json_outputs_list());
-		json.entry_json("dependencies", get_json_dependencies_dict());
+		json.entry("module_name:", module->name.str());
+		json.entry("is_seq", is_seq);
+		json.entry("inputs:", get_json_inputs_list());
+		json.entry_json("outputs:", get_json_outputs_list());
+		if(!is_seq)
+			json.entry_json("dependencies", get_json_dependencies_dict());
 		json.end_object();
 		// log("HAHAHAHHA");
 
@@ -127,6 +143,16 @@ struct ExtractIOFlowsWorker
 		// 		}
 		// 	}
 		// }
+	}
+
+	bool is_sequential(Cell *cell)
+	{
+		 for (auto element: SEQ_ELEMENTS)
+		 {
+			 if(cell->type.str().find(element) != std::string::npos)
+				 return true;
+		 }
+		 return false;
 	}
 
 	json11::Json get_json_inputs_list()
@@ -209,7 +235,7 @@ struct ExtractIOFlowsPass : public Pass {
 			log("\n");
 		}
 
-		for (auto module : design->selected_modules()) {
+		for (auto module : design->modules()) {
 			ExtractIOFlowsWorker worker(design, module);
 		}
 	}

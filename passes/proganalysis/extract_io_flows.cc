@@ -95,7 +95,6 @@ struct ExtractIOFlowsWorker
 			for (auto cell : module->cells()) {
 				RTLIL::SigSpec inputs, outputs;
 				if (cell->type == "$scopeinfo") continue;
-				//log_assert(cell->type == "$_XOR_" || cell->type == "$_AND_" || cell->type == "$_OR_" || cell->type == "$_NOT_" || cell->type == "$_MUX_");
 				for (auto conn : cell->connections()) {
 					auto dest = conn.first;
 					auto src = conn.second;
@@ -129,20 +128,6 @@ struct ExtractIOFlowsWorker
 		if(!is_seq)
 			json.entry_json("dependencies", get_json_dependencies_dict());
 		json.end_object();
-		// log("HAHAHAHHA");
-
-		// for (auto port: module->ports) {
-		// 	auto wire = module->wire(port);
-		// 	if (!wire->port_output) continue;
-		// 	for (int offset = 0; offset < wire->width; offset++) {
-		// 		auto bit = RTLIL::SigBit(wire, offset);
-		// 		auto deps = get_dependencies(bit);
-		// 		log("Output %s[%d] has %d dependencies\n", wire->name.c_str(), offset, deps.size());
-		// 		for (auto dep: deps) {
-		// 			log("  %s\n", log_signal(dep));
-		// 		}
-		// 	}
-		// }
 	}
 
 	bool is_sequential(Cell *cell)
@@ -221,7 +206,6 @@ struct ExtractIOFlowsPass : public Pass {
 	ExtractIOFlowsPass() : Pass("extract_io_flows", "extract the inputs that flow into outputs") { }
 	void help() override
 	{
-		//   |---v---|---v---|---v---|---v---|---v---|---v---|---v---|---v---|---v---|---v---|
 		log("\n");
 		log("    extract_io_flows\n");
 		log("\n");
